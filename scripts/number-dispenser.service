@@ -1,0 +1,30 @@
+[Unit]
+Description=Number Dispenser Service - Distributed ID Generator
+Documentation=https://github.com/nicexiaonie/number-dispenser
+After=network.target
+
+[Service]
+Type=simple
+User=number-dispenser
+Group=number-dispenser
+WorkingDirectory=/opt/number-dispenser
+ExecStart=/opt/number-dispenser/bin/number-dispenser -addr :6380 -data /var/lib/number-dispenser/data
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/number-dispenser
+
+# Resource Limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target
+

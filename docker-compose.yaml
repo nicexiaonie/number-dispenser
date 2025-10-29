@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  # 单节点部署
+  dispenser:
+    build: .
+    ports:
+      - "6380:6380"
+    volumes:
+      - ./data:/app/data
+    command: ["-addr", ":6380", "-data", "/app/data"]
+    restart: unless-stopped
+
+  # 多节点部署示例
+  dispenser-node1:
+    build: .
+    ports:
+      - "6380:6380"
+    volumes:
+      - ./data/node1:/app/data
+    command: ["-addr", ":6380", "-data", "/app/data"]
+    restart: unless-stopped
+    profiles:
+      - cluster
+
+  dispenser-node2:
+    build: .
+    ports:
+      - "6381:6380"
+    volumes:
+      - ./data/node2:/app/data
+    command: ["-addr", ":6380", "-data", "/app/data"]
+    restart: unless-stopped
+    profiles:
+      - cluster
+
+  dispenser-node3:
+    build: .
+    ports:
+      - "6382:6380"
+    volumes:
+      - ./data/node3:/app/data
+    command: ["-addr", ":6380", "-data", "/app/data"]
+    restart: unless-stopped
+    profiles:
+      - cluster
+

@@ -1,0 +1,27 @@
+# Number Dispenser Server Configuration
+
+# Server listening address
+server:
+  addr: ":6380"
+  
+# Data persistence
+storage:
+  # Directory for storing dispenser data
+  data_dir: "./data"
+  # Enable auto-save (saves every 5 seconds if dirty)
+  auto_save: true
+  
+# Cluster configuration (for distributed deployment)
+cluster:
+  # Enable cluster mode
+  enabled: false
+  # Unique node ID
+  node_id: "node-1"
+  # Segment size for distributed number allocation
+  segment_size: 1000
+  
+# Logging
+logging:
+  level: "info"
+  format: "text"
+
