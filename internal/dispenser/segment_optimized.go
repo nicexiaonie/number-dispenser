@@ -70,9 +70,6 @@ func NewOptimizedSegmentDispenser(
 
 	// 初始化第一个号段
 	start := cfg.Starting
-	if cfg.Type == TypeIncrZero && start == 0 {
-		start = 0
-	}
 
 	if err := osd.allocateSegment(start); err != nil {
 		return nil, err
@@ -88,8 +85,9 @@ func NewOptimizedSegmentDispenser(
 
 // Next 生成下一个号码
 func (osd *OptimizedSegmentDispenser) Next() (string, error) {
-	if osd.config.Type == TypeRandomFixed {
-		return osd.nextRandom()
+	// 只支持自增类型
+	if osd.config.Type != TypeNumericIncremental {
+		return "", fmt.Errorf("segment allocation only supported for incremental type")
 	}
 
 	osd.mu.Lock()
@@ -127,14 +125,10 @@ func (osd *OptimizedSegmentDispenser) Next() (string, error) {
 	}
 
 	// 格式化输出
-	switch osd.config.Type {
-	case TypeIncrFixed:
+	if osd.config.IncrMode == IncrModeFixed {
 		return fmt.Sprintf("%0*d", osd.config.Length, num), nil
-	case TypeIncrZero:
-		return fmt.Sprintf("%d", num), nil
-	default:
-		return "", ErrInvalidType
 	}
+	return fmt.Sprintf("%d", num), nil
 }
 
 // allocateSegment 分配新号段
@@ -142,12 +136,8 @@ func (osd *OptimizedSegmentDispenser) allocateSegment(start int64) error {
 	end := start + osd.segmentSize*osd.config.Step
 
 	// 检查边界
-	if osd.config.Type == TypeIncrFixed {
-		maxValue := int64(1)
-		for i := 0; i < osd.config.Length; i++ {
-			maxValue *= 10
-		}
-		maxValue--
+	if osd.config.IncrMode == IncrModeFixed {
+		maxValue := pow10(osd.config.Length) - 1
 
 		if start >= maxValue {
 			return ErrNumberExhausted
@@ -278,15 +268,6 @@ func (osd *OptimizedSegmentDispenser) GetStats() DispenserStats {
 		WasteRate:      wasteRate,
 		Strategy:       osd.config.AutoDisk,
 	}
-}
-
-// nextRandom 随机类型
-func (osd *OptimizedSegmentDispenser) nextRandom() (string, error) {
-	min := int64(1)
-	for i := 1; i < osd.config.Length; i++ {
-		min *= 10
-	}
-	return fmt.Sprintf("%0*d", osd.config.Length, min), nil
 }
 
 // GetConfig 返回配置

@@ -12,7 +12,8 @@ func TestOptimizedSegmentDispenser_MinimalWaste(t *testing.T) {
 	var lastPersisted int64
 
 	cfg := Config{
-		Type:     TypeIncrZero,
+		Type:     TypeNumericIncremental,
+		IncrMode: IncrModeSequence,
 		Starting: 0,
 		Step:     1,
 	}
@@ -126,7 +127,7 @@ func TestWasteComparison(t *testing.T) {
 				}
 
 				osd, _ := NewOptimizedSegmentDispenser(
-					Config{Type: TypeIncrZero, Step: 1},
+					Config{Type: TypeNumericIncremental, IncrMode: IncrModeSequence, Step: 1},
 					100,
 					0.2,
 					checkpointInterval,
@@ -152,7 +153,7 @@ func TestWasteComparison(t *testing.T) {
 			} else {
 				// 基础版（为了对比）
 				sd, _ := NewSegmentDispenser(
-					Config{Type: TypeIncrZero, Step: 1},
+					Config{Type: TypeNumericIncremental, IncrMode: IncrModeSequence, Step: 1},
 					100,
 					0.2,
 					persistFunc,
@@ -184,7 +185,7 @@ func BenchmarkOptimizedSegmentDispenser(b *testing.B) {
 	}
 
 	osd, _ := NewOptimizedSegmentDispenser(
-		Config{Type: TypeIncrZero, Step: 1},
+		Config{Type: TypeNumericIncremental, IncrMode: IncrModeSequence, Step: 1},
 		1000,
 		0.1,
 		5*time.Second, // checkpoint间隔较长，不影响性能
@@ -212,7 +213,7 @@ func BenchmarkComparison(b *testing.B) {
 
 	b.Run("Basic", func(b *testing.B) {
 		sd, _ := NewSegmentDispenser(
-			Config{Type: TypeIncrZero, Step: 1},
+			Config{Type: TypeNumericIncremental, IncrMode: IncrModeSequence, Step: 1},
 			1000,
 			0.1,
 			persistFunc,
@@ -226,7 +227,7 @@ func BenchmarkComparison(b *testing.B) {
 
 	b.Run("Optimized", func(b *testing.B) {
 		osd, _ := NewOptimizedSegmentDispenser(
-			Config{Type: TypeIncrZero, Step: 1},
+			Config{Type: TypeNumericIncremental, IncrMode: IncrModeSequence, Step: 1},
 			1000,
 			0.1,
 			10*time.Second, // checkpoint间隔长，不影响性能

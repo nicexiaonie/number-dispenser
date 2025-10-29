@@ -19,7 +19,8 @@ func TestSegmentDispenser(t *testing.T) {
 	var persistCalled int64
 
 	cfg := Config{
-		Type:     TypeIncrZero,
+		Type:     TypeNumericIncremental,
+		IncrMode: IncrModeSequence,
 		Starting: 0,
 		Step:     1,
 	}
@@ -63,7 +64,8 @@ func TestSegmentConcurrency(t *testing.T) {
 	var persistCalled int64
 
 	cfg := Config{
-		Type:     TypeIncrZero,
+		Type:     TypeNumericIncremental,
+		IncrMode: IncrModeSequence,
 		Starting: 0,
 		Step:     1,
 	}
@@ -124,8 +126,9 @@ func BenchmarkSegmentDispenser(b *testing.B) {
 	var persistCalled int64
 
 	cfg := Config{
-		Type: TypeIncrZero,
-		Step: 1,
+		Type:     TypeNumericIncremental,
+		IncrMode: IncrModeSequence,
+		Step:     1,
 	}
 
 	sd, _ := NewSegmentDispenser(cfg, 1000, 0.1, mockPersist(&persistCalled))
@@ -142,8 +145,9 @@ func BenchmarkSegmentDispenser(b *testing.B) {
 
 func BenchmarkRegularDispenser(b *testing.B) {
 	cfg := Config{
-		Type: TypeIncrZero,
-		Step: 1,
+		Type:     TypeNumericIncremental,
+		IncrMode: IncrModeSequence,
+		Step:     1,
 	}
 
 	d, _ := NewDispenser(cfg)
@@ -161,8 +165,9 @@ func BenchmarkDispenserWithImmediateSave(b *testing.B) {
 	var persistCalled int64
 
 	cfg := Config{
-		Type: TypeIncrZero,
-		Step: 1,
+		Type:     TypeNumericIncremental,
+		IncrMode: IncrModeSequence,
+		Step:     1,
 	}
 
 	d, _ := NewDispenser(cfg)

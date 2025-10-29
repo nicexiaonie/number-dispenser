@@ -11,7 +11,13 @@ import (
 
 // handleHSet handles the HSET command for configuring a dispenser
 // Format: HSET key field1 value1 [field2 value2 ...]
-// 支持的字段: type, length, starting, step, auto_disk
+//
+// 新的类型系统：
+// Type 1: 纯数字随机 - length, unique_check, auto_disk
+// Type 2: 纯数字自增 - length (可选), starting, step, incr_mode, auto_disk
+// Type 3: 字符随机 - length, charset, auto_disk
+// Type 4: 雪花ID - machine_id, datacenter_id, auto_disk
+// Type 5: UUID - uuid_format, auto_disk
 func (s *Server) handleHSet(args []string) protocol.Value {
 	if len(args) < 3 || len(args)%2 == 0 {
 		return protocol.Value{Type: protocol.Error, Str: "ERR wrong number of arguments for 'hset' command"}
@@ -58,7 +64,56 @@ func (s *Server) handleHSet(args []string) protocol.Value {
 			}
 			cfg.Step = step
 
-		case "auto_disk":
+		case "machine_id", "machine-id":
+			machineID, err := strconv.ParseInt(value, 10, 64)
+			if err != nil {
+				return protocol.Value{Type: protocol.Error, Str: "ERR invalid machine_id value"}
+			}
+			cfg.MachineID = machineID
+
+		case "datacenter_id", "datacenter-id":
+			datacenterID, err := strconv.ParseInt(value, 10, 64)
+			if err != nil {
+				return protocol.Value{Type: protocol.Error, Str: "ERR invalid datacenter_id value"}
+			}
+			cfg.DatacenterID = datacenterID
+
+		case "incr_mode", "incr-mode":
+			cfg.IncrMode = dispenser.IncrementalMode(strings.ToLower(value))
+			if cfg.IncrMode != dispenser.IncrModeFixed && cfg.IncrMode != dispenser.IncrModeSequence {
+				return protocol.Value{Type: protocol.Error,
+					Str: "ERR invalid incr_mode value, valid values: fixed, sequence"}
+			}
+
+		case "charset":
+			cfg.Charset = dispenser.Charset(strings.ToLower(value))
+			if cfg.Charset != dispenser.CharsetHex && cfg.Charset != dispenser.CharsetBase62 {
+				return protocol.Value{Type: protocol.Error,
+					Str: "ERR invalid charset value, valid values: hex, base62"}
+			}
+
+		case "uuid_format", "uuid-format":
+			cfg.UUIDFormat = dispenser.UUIDFormat(strings.ToLower(value))
+			if cfg.UUIDFormat != dispenser.UUIDFormatStandard && cfg.UUIDFormat != dispenser.UUIDFormatCompact {
+				return protocol.Value{Type: protocol.Error,
+					Str: "ERR invalid uuid_format value, valid values: standard, compact"}
+			}
+
+		case "unique_check", "unique-check":
+			unique, err := strconv.ParseBool(value)
+			if err != nil {
+				return protocol.Value{Type: protocol.Error, Str: "ERR invalid unique_check value"}
+			}
+			cfg.UniqueCheck = unique
+
+		case "unique_cache_size", "unique-cache-size":
+			size, err := strconv.Atoi(value)
+			if err != nil {
+				return protocol.Value{Type: protocol.Error, Str: "ERR invalid unique_cache_size value"}
+			}
+			cfg.UniqueCacheSize = size
+
+		case "auto_disk", "auto-disk":
 			cfg.AutoDisk = dispenser.PersistenceStrategy(strings.ToLower(value))
 			// 验证策略是否有效
 			if !dispenser.ValidPersistenceStrategies[cfg.AutoDisk] {
@@ -125,7 +180,8 @@ func (s *Server) handleGet(args []string) protocol.Value {
 
 	// 只有 elegant_close 策略需要立即保存
 	if cfg.AutoDisk == dispenser.StrategyElegantClose {
-		if cfg.Type == dispenser.TypeIncrFixed || cfg.Type == dispenser.TypeIncrZero {
+		// 只对自增类型立即保存
+		if cfg.Type == dispenser.TypeNumericIncremental {
 			if err := s.storage.Save(name, cfg, d.GetCurrent()); err != nil {
 				// 记录错误但继续返回
 			}
@@ -187,9 +243,42 @@ func (s *Server) handleInfo(args []string) protocol.Value {
 	// 获取统计信息
 	stats := d.GetStats()
 
-	info := fmt.Sprintf("name:%s\ntype:%d\nlength:%d\nstarting:%d\nstep:%d\ncurrent:%d\nauto_disk:%s\ngenerated:%d\nwasted:%d\nwaste_rate:%.2f%%",
-		name, cfg.Type, cfg.Length, cfg.Starting, cfg.Step, current,
-		cfg.AutoDisk, stats.TotalGenerated, stats.TotalWasted, stats.WasteRate)
+	// 根据类型显示不同的信息
+	var info string
+	switch cfg.Type {
+	case dispenser.TypeNumericRandom:
+		// Type 1: 纯数字随机
+		info = fmt.Sprintf("name:%s\ntype:1 (Numeric Random)\nlength:%d\nunique_check:%v\nauto_disk:%s\ngenerated:%d",
+			name, cfg.Length, cfg.UniqueCheck, cfg.AutoDisk, stats.TotalGenerated)
+
+	case dispenser.TypeNumericIncremental:
+		// Type 2: 纯数字自增
+		if cfg.IncrMode == dispenser.IncrModeFixed {
+			info = fmt.Sprintf("name:%s\ntype:2 (Numeric Incremental)\nmode:fixed\nlength:%d\nstarting:%d\nstep:%d\ncurrent:%d\nauto_disk:%s\ngenerated:%d\nwasted:%d\nwaste_rate:%.2f%%",
+				name, cfg.Length, cfg.Starting, cfg.Step, current, cfg.AutoDisk, stats.TotalGenerated, stats.TotalWasted, stats.WasteRate)
+		} else {
+			info = fmt.Sprintf("name:%s\ntype:2 (Numeric Incremental)\nmode:sequence\nstarting:%d\nstep:%d\ncurrent:%d\nauto_disk:%s\ngenerated:%d\nwasted:%d\nwaste_rate:%.2f%%",
+				name, cfg.Starting, cfg.Step, current, cfg.AutoDisk, stats.TotalGenerated, stats.TotalWasted, stats.WasteRate)
+		}
+
+	case dispenser.TypeAlphanumericRandom:
+		// Type 3: 字符随机
+		info = fmt.Sprintf("name:%s\ntype:3 (Alphanumeric Random)\nlength:%d\ncharset:%s\nauto_disk:%s\ngenerated:%d",
+			name, cfg.Length, cfg.Charset, cfg.AutoDisk, stats.TotalGenerated)
+
+	case dispenser.TypeSnowflake:
+		// Type 4: 雪花ID
+		info = fmt.Sprintf("name:%s\ntype:4 (Snowflake)\nmachine_id:%d\ndatacenter_id:%d\nauto_disk:%s\ngenerated:%d",
+			name, cfg.MachineID, cfg.DatacenterID, cfg.AutoDisk, stats.TotalGenerated)
+
+	case dispenser.TypeUUID:
+		// Type 5: UUID
+		info = fmt.Sprintf("name:%s\ntype:5 (UUID)\nformat:%s\nauto_disk:%s\ngenerated:%d",
+			name, cfg.UUIDFormat, cfg.AutoDisk, stats.TotalGenerated)
+
+	default:
+		info = fmt.Sprintf("name:%s\ntype:%d (Unknown)", name, cfg.Type)
+	}
 
 	return protocol.Value{Type: protocol.BulkString, Bulk: info}
 }

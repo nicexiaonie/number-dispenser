@@ -55,9 +55,6 @@ func NewSegmentDispenser(cfg Config, segmentSize int64, threshold float64, persi
 
 	// 初始化第一个号段
 	start := cfg.Starting
-	if cfg.Type == TypeIncrZero && start == 0 {
-		start = 0
-	}
 
 	if err := sd.allocateSegment(start); err != nil {
 		return nil, err
@@ -68,9 +65,9 @@ func NewSegmentDispenser(cfg Config, segmentSize int64, threshold float64, persi
 
 // Next 生成下一个号码（高性能版本）
 func (sd *SegmentDispenser) Next() (string, error) {
-	// 随机类型不需要号段机制，直接生成
-	if sd.config.Type == TypeRandomFixed {
-		return sd.nextRandom()
+	// 随机类型不支持号段机制
+	if sd.config.Type != TypeNumericIncremental {
+		return "", fmt.Errorf("segment allocation only supported for incremental type")
 	}
 
 	sd.mu.Lock()
@@ -106,27 +103,19 @@ func (sd *SegmentDispenser) Next() (string, error) {
 	}
 
 	// 格式化输出
-	switch sd.config.Type {
-	case TypeIncrFixed:
+	if sd.config.IncrMode == IncrModeFixed {
 		return fmt.Sprintf("%0*d", sd.config.Length, num), nil
-	case TypeIncrZero:
-		return fmt.Sprintf("%d", num), nil
-	default:
-		return "", ErrInvalidType
 	}
+	return fmt.Sprintf("%d", num), nil
 }
 
 // allocateSegment 分配一个新号段（会写磁盘）
 func (sd *SegmentDispenser) allocateSegment(start int64) error {
 	end := start + sd.segmentSize*sd.config.Step
 
-	// 检查固定位数类型的边界
-	if sd.config.Type == TypeIncrFixed {
-		maxValue := int64(1)
-		for i := 0; i < sd.config.Length; i++ {
-			maxValue *= 10
-		}
-		maxValue--
+	// 检查固定位数模式的边界
+	if sd.config.IncrMode == IncrModeFixed {
+		maxValue := pow10(sd.config.Length) - 1
 
 		if start >= maxValue {
 			return ErrNumberExhausted
@@ -176,20 +165,6 @@ func (sd *SegmentDispenser) preloadNextSegment() {
 	sd.nextSegmentStart = start
 	sd.nextSegmentEnd = end
 	sd.nextSegmentReady = true
-}
-
-// nextRandom 生成随机数（随机类型不需要号段）
-func (sd *SegmentDispenser) nextRandom() (string, error) {
-	min := int64(1)
-	for i := 1; i < sd.config.Length; i++ {
-		min *= 10
-	}
-	// max := min*10 - 1
-
-	// 这里需要一个随机数生成器，简化实现
-	// 实际应该像原来的 Dispenser 一样使用 rand.Rand
-	// 号段模式不推荐用于随机类型
-	return fmt.Sprintf("%0*d", sd.config.Length, min), nil
 }
 
 // GetConfig 返回配置
