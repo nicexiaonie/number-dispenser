@@ -1,3 +1,4 @@
+[toc]
 # Number Dispenser - 项目总结
 
 ## 项目概述

@@ -135,7 +135,108 @@ func (s *Server) handleHSet(args []string) protocol.Value {
 		cfg.AutoDisk = dispenser.StrategyElegantClose
 	}
 
-	// 使用工厂创建发号器
+	// 检查发号器是否已存在
+	s.mu.Lock()
+	existingDispenser, exists := s.dispensers[name]
+	s.mu.Unlock()
+
+	if exists {
+		// 发号器已存在，只允许修改 auto_disk 策略
+		existingCfg := existingDispenser.GetConfig()
+
+		// 检查核心配置是否改变
+		if cfg.Type != existingCfg.Type {
+			return protocol.Value{Type: protocol.Error,
+				Str: fmt.Sprintf("ERR cannot change dispenser type (existing: %d, new: %d). Use DEL first if you want to recreate", existingCfg.Type, cfg.Type)}
+		}
+
+		// 检查其他关键参数
+		configChanged := false
+		var changedFields []string
+
+		if cfg.Length != 0 && cfg.Length != existingCfg.Length {
+			changedFields = append(changedFields, "length")
+			configChanged = true
+		}
+		if cfg.Starting != 0 && cfg.Starting != existingCfg.Starting {
+			changedFields = append(changedFields, "starting")
+			configChanged = true
+		}
+		if cfg.Step != 0 && cfg.Step != existingCfg.Step {
+			changedFields = append(changedFields, "step")
+			configChanged = true
+		}
+		if cfg.IncrMode != "" && cfg.IncrMode != existingCfg.IncrMode {
+			changedFields = append(changedFields, "incr_mode")
+			configChanged = true
+		}
+		if cfg.Charset != "" && cfg.Charset != existingCfg.Charset {
+			changedFields = append(changedFields, "charset")
+			configChanged = true
+		}
+		if cfg.UUIDFormat != "" && cfg.UUIDFormat != existingCfg.UUIDFormat {
+			changedFields = append(changedFields, "uuid_format")
+			configChanged = true
+		}
+		if cfg.MachineID != 0 && cfg.MachineID != existingCfg.MachineID {
+			changedFields = append(changedFields, "machine_id")
+			configChanged = true
+		}
+		if cfg.DatacenterID != 0 && cfg.DatacenterID != existingCfg.DatacenterID {
+			changedFields = append(changedFields, "datacenter_id")
+			configChanged = true
+		}
+
+		if configChanged {
+			return protocol.Value{Type: protocol.Error,
+				Str: fmt.Sprintf("ERR cannot change core parameters (%s) for existing dispenser. Only 'auto_disk' can be modified. Use DEL first if you want to recreate",
+					strings.Join(changedFields, ", "))}
+		}
+
+		// 只允许修改 auto_disk
+		if cfg.AutoDisk != existingCfg.AutoDisk {
+			// 需要使用新的策略重新创建发号器
+			// 但保留 current 值和统计信息
+			currentValue := existingDispenser.GetCurrent()
+
+			// 使用现有配置，只更新auto_disk
+			newCfg := existingCfg
+			newCfg.AutoDisk = cfg.AutoDisk
+
+			// 创建新的发号器实例
+			d, err := s.factory.CreateDispenser(name, newCfg)
+			if err != nil {
+				return protocol.Value{Type: protocol.Error, Str: fmt.Sprintf("ERR %v", err)}
+			}
+
+			// 恢复 current 值（只对自增类型有效）
+			if newCfg.Type == dispenser.TypeNumericIncremental {
+				d.SetCurrent(currentValue)
+			}
+
+			// 替换发号器
+			s.mu.Lock()
+			// 关闭旧的发号器
+			if err := existingDispenser.Shutdown(); err != nil {
+				s.mu.Unlock()
+				return protocol.Value{Type: protocol.Error, Str: fmt.Sprintf("ERR failed to shutdown old dispenser: %v", err)}
+			}
+			s.dispensers[name] = d
+			s.mu.Unlock()
+
+			// 保存
+			if err := s.storage.Save(name, newCfg, d.GetCurrent()); err != nil {
+				return protocol.Value{Type: protocol.Error, Str: fmt.Sprintf("ERR failed to save: %v", err)}
+			}
+
+			return protocol.Value{Type: protocol.Integer, Num: int64(len(fields) / 2)}
+		}
+
+		// 配置没有变化，返回成功
+		return protocol.Value{Type: protocol.Integer, Num: int64(len(fields) / 2)}
+	}
+
+	// 发号器不存在，创建新的
 	d, err := s.factory.CreateDispenser(name, cfg)
 	if err != nil {
 		return protocol.Value{Type: protocol.Error, Str: fmt.Sprintf("ERR %v", err)}

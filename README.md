@@ -289,6 +289,36 @@ HSET test_id type 2 incr_mode sequence starting 0 auto_disk memory
 HSET <name> type <1|2|3|4|5> [<type-specific-params>] [auto_disk <strategy>]
 ```
 
+**重要说明**:
+- **新建发号器**: 如果发号器不存在，将创建新的发号器
+- **更新发号器**: 如果发号器已存在：
+  - ✅ **只能修改** `auto_disk` 策略（持久化策略可热切换）
+  - ❌ **不能修改** 核心参数（type, length, starting, step等）
+  - ✅ **自动保留** current值和统计信息
+  - 如需修改核心参数，请先 `DEL` 再重新 `HSET`
+
+**示例**:
+```bash
+# 创建发号器
+HSET order_id type 2 incr_mode fixed length 12 starting 100 auto_disk memory
+
+# 生成号码
+GET order_id  # "000000000100"
+GET order_id  # "000000000101"
+
+# ✅ 修改持久化策略（成功，current值保留）
+HSET order_id type 2 auto_disk pre_close
+GET order_id  # "000000000102"  ← 继续从正确位置生成
+
+# ❌ 尝试修改核心参数（失败）
+HSET order_id type 2 starting 200
+# (error) ERR cannot change core parameters (starting)
+
+# ✅ 如需重建发号器
+DEL order_id
+HSET order_id type 2 incr_mode fixed length 12 starting 200
+```
+
 #### Type 1 参数
 
 ```bash
